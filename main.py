@@ -79,7 +79,7 @@ def mainapp():
     Duration = None
     result = None
 
-    if form.validate_on_submit():
+    if flask.request.method == 'POST':
         result_data = list(prolog.query(
             f"dijkstra('{form.start.data}', '{form.end.data}', Path, Distance, Duration, '{form.roadtype.data}', '{form.avoid.data}')"
         ))
@@ -104,14 +104,69 @@ def mainapp():
   
 @app.route('/clear-list')
 def clear_list():
-    # This is the magic part: it sends the user back to the blank home page
+    
     return redirect(url_for('home'))
 
-@app.route('/admin',methods=['GET', 'POST'])
-def admin():
-     
-     return flask.render_template('admin.html',title='admin page')
 
+
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin():
+    form = GpsForm()
+    if flask.request.method == 'POST':
+        start = form.start.data
+        end = form.end.data
+        action = flask.request.form.get('action')
+        pl_path = r"C:\Users\kenei\OneDrive\Desktop\new coding journey 2026\AI_project\AIprolog.pl"
+ 
+        with open(pl_path, 'r') as f:
+            lines = f.readlines()
+ 
+        updated_lines = []
+        changed = False
+        old_value = None
+        new_value = None
+ 
+        for line in lines:
+            stripped = line.strip()
+ 
+            if stripped.startswith(f"road('{start}','{end}',"):
+                inner = stripped[len("road("):-2]
+                parts = [p.strip().strip("'") for p in inner.split(',')]
+                # parts = [start, end, dist, type, condition, dur, status]
+ 
+                if action == 'condition':
+                    old_value = parts[4]
+                    new_value = form.avoid.data
+                    parts[4] = new_value
+ 
+                elif action == 'roadtype':
+                    old_value = parts[3]
+                    new_value = form.roadtype.data
+                    parts[3] = new_value
+ 
+                elif action == 'status':
+                    old_value = parts[6]
+                    new_value = form.status.data
+                    parts[6] = new_value
+ 
+                # status has no quotes in the .pl file (it's an atom like open/closed)
+                line = f"road('{parts[0]}','{parts[1]}',{parts[2]},'{parts[3]}','{parts[4]}',{parts[5]},{parts[6]}).\n"
+                changed = True
+ 
+            updated_lines.append(line)
+ 
+        if changed:
+            with open(pl_path, 'w') as f:
+                f.writelines(updated_lines)
+            prolog.consult(pl_path)
+            label = {'condition': 'condition', 'roadtype': 'road type', 'status': 'status'}[action]
+            flash(f"Updated {label} for {start} to {end}: '{old_value}' changed to '{new_value}'")
+        else:
+            flash(f"Could not find road: {start} to {end}")
+ 
+    return flask.render_template('admin.html', title='Admin page', form=form)
+ 
 
 if __name__=='__main__':
  app.run(debug=True)

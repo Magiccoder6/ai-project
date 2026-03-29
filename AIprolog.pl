@@ -31,8 +31,8 @@ road('St.thomas','St.andrew',51,'unpaved','none',60,open).
 road('St.andrew','St.thomas',51,'unpaved','none',60,open).
 
 %st andrew to kingston 
-road('St.andrew','Kingston',8.5,'unpaved','none',30,open).
-road('Kingston','St.andrew',8.5,'unpaved','none',30,open).
+road('St.andrew','Kingston',8.5,'paved','none',30,open).
+road('Kingston','St.andrew',8.5,'paved','deep potholes',30,open).
 
 %kingston to st.catherine
 road('Kingston','St.Catherine',34.7,'paved','deep potholes',49,open).
@@ -47,9 +47,9 @@ road('Clarendon','St.Catherine',47.7,'paved','deep potholes',55,open).
 % condition mapping
 
 
-avoid_condition(broken_cistern, 'broken cistern').
-avoid_condition(deep_potholes, 'deep potholes').
-avoid_condition(none, none).
+avoid_condition('broken cistern', 'broken cistern').
+avoid_condition('deep potholes', 'deep potholes').
+avoid_condition('none', none).
 
 
 

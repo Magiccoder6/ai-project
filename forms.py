@@ -46,5 +46,11 @@ class GpsForm(FlaskForm):
         ('none','none')
     ],validators=[DataRequired()])
 
+
+    status=SelectField('Road Status',choices=[
+        ('open','open'),
+        ('closed','closed')
+    ])
+
     submit=SubmitField('Confirm')
 

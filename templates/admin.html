@@ -4,8 +4,164 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+ 
+        body {
+            background-color: #f0f7f0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+ 
+        .form-box {
+            background-color: #fff;
+            border: 1px solid #a8d5a2;
+            border-radius: 6px;
+            padding: 30px;
+            width: 380px;
+        }
+ 
+        h1 {
+            color: #2e7d32;
+            text-align: center;
+            font-size: 22px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+ 
+        h2 {
+            color: #555;
+            text-align: center;
+            font-size: 14px;
+            font-weight: normal;
+            margin-bottom: 24px;
+        }
+ 
+        h3 {
+            color: #2e7d32;
+            font-size: 15px;
+            font-weight: 500;
+            border-bottom: 1px solid #a8d5a2;
+            padding-bottom: 6px;
+            margin-bottom: 16px;
+        }
+ 
+        label {
+            display: block;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+ 
+        input, select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #a8d5a2;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 14px;
+            outline: none;
+            background-color: #fff;
+            color: #333;
+        }
+ 
+        input:focus, select:focus {
+            border-color: #2e7d32;
+        }
+ 
+        input[type="submit"] {
+            background-color: #2e7d32;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 15px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 2px;
+            margin-bottom: 0;
+        }
+ 
+        input[type="submit"]:hover {
+            background-color: #1b5e20;
+        }
+ 
+        .divider {
+            border: none;
+            border-top: 1px dashed #a8d5a2;
+            margin: 24px 0;
+        }
+    </style>
 </head>
 <body>
-  <h1>Admin page</h1>
+ 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+        <script>alert("{{ message }}");</script>
+        {% endfor %}
+    {% endif %}
+    {% endwith %}
+ 
+    <div class="form-box">
+ 
+        <h1>Admin Page</h1>
+        <h2>What would you like to modify?</h2>
+ 
+        
+        <h3>Change road condition</h3>
+        <form action="{{ url_for('admin') }}" method="post">
+            {{ form.hidden_tag() }}
+            {{ form.start.label() }}
+            {{ form.start() }}
+            {{ form.end.label() }}
+            {{ form.end() }}
+            {{ form.avoid.label() }}
+            {{ form.avoid() }}
+            <input type="hidden" name="action" value="condition">
+            <input type="submit" value="Update condition">
+        </form>
+ 
+        <hr class="divider">
+ 
+      
+        <h3>Change road type</h3>
+        <form action="{{ url_for('admin') }}" method="post">
+            {{ form.hidden_tag() }}
+            {{ form.start.label() }}
+            {{ form.start() }}
+            {{ form.end.label() }}
+            {{ form.end() }}
+            {{ form.roadtype.label() }}
+            {{ form.roadtype() }}
+            <input type="hidden" name="action" value="roadtype">
+            <input type="submit" value="Update road type">
+        </form>
+ 
+        <hr class="divider">
+ 
+   
+        <h3>Change road status</h3>
+        <form action="{{ url_for('admin') }}" method="post">
+            {{ form.hidden_tag() }}
+            {{ form.start.label() }}
+            {{ form.start() }}
+            {{ form.end.label() }}
+            {{ form.end() }}
+            {{ form.status.label() }}
+            {{ form.status() }}
+            <input type="hidden" name="action" value="status">
+            <input type="submit" value="Update status">
+        </form>
+ 
+    </div>
+ 
 </body>
 </html>
