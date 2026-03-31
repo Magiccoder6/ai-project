@@ -160,6 +160,36 @@
             <input type="hidden" name="action" value="status">
             <input type="submit" value="Update status">
         </form>
+
+        <hr class="divider">
+
+        <h3>Change road direction</h3>
+        <form action="{{ url_for('admin') }}" method="post">
+            {{ form.hidden_tag() }}
+            {{ form.start.label() }}
+            {{ form.start() }}
+            {{ form.end.label() }}
+            {{ form.end() }}
+            {{ form.direction.label() }}
+            {{ form.direction() }}
+            <input type="hidden" name="action" value="direction">
+            <input type="submit" value="Update direction">
+        </form>
+
+        <hr class="divider">
+
+        <h3>Update pothole depth</h3>
+        <form action="{{ url_for('admin') }}" method="post">
+            {{ form.hidden_tag() }}
+            {{ form.start.label() }}
+            {{ form.start() }}
+            {{ form.end.label() }}
+            {{ form.end() }}
+            {{ form.pothole_depth.label() }}
+            {{ form.pothole_depth(min=0, max=12) }}
+            <input type="hidden" name="action" value="pothole_depth">
+            <input type="submit" value="Update pothole depth">
+        </form>
  
     </div>
  

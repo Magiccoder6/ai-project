@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField,PasswordField,SubmitField,SelectField
+from wtforms import StringField,PasswordField,SubmitField,SelectField,IntegerField
 from wtforms.validators import DataRequired,Length,Email,EqualTo
 
 
@@ -22,18 +22,8 @@ class LoginForm(FlaskForm):
 
 
 class GpsForm(FlaskForm):
-    start=SelectField('Start',choices=[('Kingston','Kingston'),
-    ('St.Catherine','St.Catherine'),
-    ('Portland','Portland'),
-    ('St.andrew','St.andrew')
-    
-    ],validators=[DataRequired()])
-    end=SelectField('end',choices=[('Kingston','Kingston'),
-    ('St.Catherine','St.Catherine'),
-    ('Portland','Portland'),
-    ('St.andrew','St.andrew')
-    
-    ],validators=[DataRequired()])
+    start=SelectField('Start',choices=[],validators=[DataRequired()])
+    end=SelectField('end',choices=[],validators=[DataRequired()])
 
     roadtype=SelectField('road type',choices=[
      ('paved','paved'),
@@ -49,8 +39,16 @@ class GpsForm(FlaskForm):
 
     status=SelectField('Road Status',choices=[
         ('open','open'),
-        ('closed','closed')
+        ('closed','closed'),
+        ('seasonal_blocked','seasonal_blocked')
     ])
+
+    direction=SelectField('Road Direction',choices=[
+        ('two_way','two_way'),
+        ('one_way','one_way')
+    ])
+
+    pothole_depth=IntegerField('Pothole depth (inches)')
 
     submit=SubmitField('Confirm')
 
