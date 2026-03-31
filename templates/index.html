@@ -16,16 +16,29 @@
             font-family: Arial, sans-serif;
             display: flex;
             justify-content: center;
-            align-items: center;
+          align-items: flex-start;
             min-height: 100vh;
+          padding: 24px;
+        }
+
+        .page-layout {
+          width: 100%;
+          max-width: 1200px;
+          display: grid;
+          grid-template-columns: 380px 1fr;
+          gap: 20px;
+          align-items: start;
+        }
+
+        .panel {
+          background-color: #fff;
+          border: 1px solid #a8d5a2;
+          border-radius: 6px;
+          padding: 30px;
         }
 
         .form-box {
-            background-color: #fff;
-            border: 1px solid #a8d5a2;
-            border-radius: 6px;
-            padding: 30px;
-            width: 360px;
+          width: 100%;
         }
 
         h1 {
@@ -123,6 +136,100 @@
             color: #333;
             margin-bottom: 6px;
         }
+
+        .graph-title {
+          margin-top: 16px;
+        }
+
+        .graph-box {
+          margin-top: 0;
+          border: 1px solid #a8d5a2;
+          border-radius: 4px;
+          background-color: #f8fff8;
+          height: 620px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .graph-box svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+
+        .map-outline {
+          fill: #eef8ee;
+          stroke: #9ec79a;
+          stroke-width: 2;
+        }
+
+        .edge-line {
+          stroke: #607d8b;
+          stroke-width: 2;
+          fill: none;
+          opacity: 0.9;
+        }
+
+        .edge-line.closed {
+          stroke: #d32f2f;
+          stroke-dasharray: 6 5;
+        }
+
+        .edge-line.selected {
+          stroke: #2e7d32;
+          stroke-width: 3;
+        }
+
+        .edge-label {
+          font-size: 10px;
+          fill: #2d3c40;
+        }
+
+        .node-circle {
+          fill: #2e7d32;
+          stroke: #ffffff;
+          stroke-width: 1.5;
+        }
+
+        .node-label {
+          font-size: 11px;
+          fill: #1b5e20;
+          font-weight: bold;
+          text-anchor: start;
+          dominant-baseline: middle;
+          pointer-events: none;
+        }
+
+        .legend {
+          margin-top: 8px;
+          font-size: 12px;
+          color: #444;
+        }
+
+        .rules-box {
+          margin-top: 10px;
+          background-color: #f0f7f0;
+          border: 1px solid #a8d5a2;
+          border-radius: 4px;
+          padding: 10px;
+          font-size: 12px;
+          color: #2f4f2f;
+          line-height: 1.45;
+        }
+
+        .rules-box strong {
+          color: #1b5e20;
+        }
+
+        @media (max-width: 980px) {
+          .page-layout {
+            grid-template-columns: 1fr;
+          }
+
+          .graph-box {
+            height: 420px;
+          }
+        }
     </style>
 </head>
 <body>
@@ -137,7 +244,8 @@
   {% endif %}
   {% endwith %}
 
-  <div class="form-box">
+  <div class="page-layout">
+  <div class="panel form-box">
 
     <h1>Welcome to Road works</h1>
     <h2>What would you like to do today?</h2>
@@ -184,13 +292,258 @@
         </div>
         {% endif %}
 
+        {% if algorithm_used %}
+        <div>
+          Routing algorithm used: {{ algorithm_used }}
+        </div>
+        {% endif %}
+
         {% if result %}
         <div>{{result}}</div>
+        {% endif %}
+
+        {% if selected_route_edges %}
+        <h3>Route Edge Details:</h3>
+        {% for edge in selected_route_edges %}
+        <div>
+          {{ edge.from }} → {{ edge.to }} |
+          {{ edge.distance }} km |
+          {{ edge.roadType }} |
+          {{ edge.condition }} |
+          {{ edge.potholeDepth }} in |
+          {{ edge.travelTime }} min |
+          {{ edge.status }} |
+          {{ edge.direction }}
+        </div>
+        {% endfor %}
         {% endif %}
       </div>
 
     </form>
   </div>
+
+  <div class="panel">
+    <h3 class="graph-title">Road Network Graph</h3>
+    <div id="roadGraph" class="graph-box"></div>
+    <div class="legend">
+      Green edges are part of the selected route. Red edges are closed or seasonally blocked roads.
+    </div>
+    <div class="legend">Use mouse wheel to zoom, drag to pan, and double-click to reset.</div>
+    <div class="rules-box">
+      <div><strong>Road Rules</strong></div>
+      <div>• Two-way roads are traversable in both directions.</div>
+      <div>• One-way roads are traversable only in the defined direction.</div>
+      <div>• Status <strong>closed</strong> and <strong>seasonal_blocked</strong> are treated as blocked.</div>
+      <div>• Pothole depth above 3 inches is treated as deep potholes during routing.</div>
+      <div>• Hover an edge to view distance, road type, condition, pothole depth, travel time, status, and direction.</div>
+    </div>
+  </div>
+  </div>
+
+  <script id="graph-nodes-data" type="application/json">{{ graph_nodes|tojson }}</script>
+  <script id="graph-edges-data" type="application/json">{{ graph_edges|tojson }}</script>
+  <script id="selected-path-data" type="application/json">{{ selected_path|tojson }}</script>
+  <script>
+    const graphNodes = JSON.parse(document.getElementById('graph-nodes-data').textContent);
+    const graphEdgesRaw = JSON.parse(document.getElementById('graph-edges-data').textContent);
+    const selectedPath = JSON.parse(document.getElementById('selected-path-data').textContent);
+
+    const selectedSegments = new Set();
+    for (let i = 0; i < selectedPath.length - 1; i += 1) {
+      selectedSegments.add(`${selectedPath[i]}->${selectedPath[i + 1]}`);
+    }
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const mapWidth = 860;
+    const mapHeight = 580;
+
+    function getNodePosition(node) {
+      const x = Number(node.x);
+      const y = Number(node.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        return { x, y };
+      }
+      return null;
+    }
+
+    const graphContainer = document.getElementById('roadGraph');
+    const svg = document.createElementNS(svgNS, 'svg');
+    const defaultViewBox = { x: 0, y: 0, width: mapWidth, height: mapHeight };
+    const viewBox = { ...defaultViewBox };
+
+    function setViewBox() {
+      svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+    }
+
+    function clientToSvgPoint(clientX, clientY) {
+      const pt = svg.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) {
+        return { x: clientX, y: clientY };
+      }
+      return pt.matrixTransform(ctm.inverse());
+    }
+
+    setViewBox();
+
+    const outline = document.createElementNS(svgNS, 'path');
+    outline.setAttribute(
+      'd',
+        'M58,310 C56,270 58,232 64,205 C72,174 94,150 130,130 C164,112 214,98 284,88 C346,80 408,78 468,84 C522,90 578,108 634,132 C684,148 736,140 786,170 C828,196 862,238 872,282 C882,322 874,366 850,396 C820,428 778,446 724,458 C662,470 594,468 522,462 C442,454 360,446 282,434 C212,424 146,404 104,376 C70,352 60,342 58,310 Z'
+    );
+    outline.setAttribute('class', 'map-outline');
+    svg.appendChild(outline);
+
+    const nodePositions = new Map();
+    const missingCoordinates = [];
+    graphNodes.forEach((node) => {
+      const position = getNodePosition(node);
+      if (position) {
+        nodePositions.set(node.id, position);
+      } else {
+        missingCoordinates.push(node.id);
+      }
+    });
+    if (missingCoordinates.length > 0) {
+      console.warn('Missing coordinates for:', missingCoordinates);
+    }
+
+    graphEdgesRaw.forEach((edge) => {
+      const fromPos = nodePositions.get(edge.from);
+      const toPos = nodePositions.get(edge.to);
+      if (!fromPos || !toPos) return;
+
+      const key = `${edge.from}->${edge.to}`;
+      const isSelected = selectedSegments.has(key);
+      const edgeStatus = String(edge.status).toLowerCase();
+      const isClosed = edgeStatus === 'closed' || edgeStatus === 'seasonal_blocked';
+
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', fromPos.x);
+      line.setAttribute('y1', fromPos.y);
+      line.setAttribute('x2', toPos.x);
+      line.setAttribute('y2', toPos.y);
+      line.setAttribute('class', 'edge-line');
+      if (isClosed) {
+        line.classList.add('closed');
+      }
+      if (isSelected) {
+        line.classList.add('selected');
+      }
+      line.appendChild(document.createElementNS(svgNS, 'title')).textContent =
+        `Road: ${edge.from} → ${edge.to}\nDistance: ${edge.distance} km\nType: ${edge.roadType}\nCondition: ${edge.condition}\nPothole Depth: ${edge.potholeDepth} in\nTravel Time: ${edge.travelTime} min\nStatus: ${edge.status}\nDirection: ${edge.direction}`;
+      svg.appendChild(line);
+
+      const label = document.createElementNS(svgNS, 'text');
+      label.setAttribute('x', (fromPos.x + toPos.x) / 2);
+      label.setAttribute('y', (fromPos.y + toPos.y) / 2 - 4);
+      label.setAttribute('class', 'edge-label');
+      label.textContent = `${edge.distance}km`;
+      svg.appendChild(label);
+    });
+
+    const labelOffsets = {
+      'Kingston': { x: 10, y: -12 },
+      'St.Catherine': { x: -62, y: -10 },
+      'Clarendon': { x: -58, y: -6 },
+      'St.andrew': { x: 10, y: -12 },
+      'St.thomas': { x: 10, y: -10 }
+    };
+
+    graphNodes.forEach((node) => {
+      const point = nodePositions.get(node.id);
+      if (!point) {
+        return;
+      }
+
+      const circle = document.createElementNS(svgNS, 'circle');
+      circle.setAttribute('cx', point.x);
+      circle.setAttribute('cy', point.y);
+      circle.setAttribute('r', 5);
+      circle.setAttribute('class', 'node-circle');
+      circle.appendChild(document.createElementNS(svgNS, 'title')).textContent = node.label;
+      svg.appendChild(circle);
+
+      const label = document.createElementNS(svgNS, 'text');
+      const offset = labelOffsets[node.id] || { x: 8, y: -8 };
+      label.setAttribute('x', point.x + offset.x);
+      label.setAttribute('y', point.y + offset.y);
+      label.setAttribute('class', 'node-label');
+      label.textContent = node.label;
+      svg.appendChild(label);
+    });
+
+    let isPanning = false;
+    let panStartPoint = null;
+    let panStartViewBox = null;
+
+    svg.style.cursor = 'default';
+
+    svg.addEventListener('wheel', (event) => {
+      event.preventDefault();
+
+      const zoomFactor = event.deltaY > 0 ? 1.1 : 0.9;
+      const minWidth = mapWidth * 0.35;
+      const maxWidth = mapWidth * 2.2;
+
+      const mousePoint = clientToSvgPoint(event.clientX, event.clientY);
+
+      const newWidth = Math.min(maxWidth, Math.max(minWidth, viewBox.width * zoomFactor));
+      const scale = newWidth / viewBox.width;
+      const newHeight = viewBox.height * scale;
+
+      viewBox.x = mousePoint.x - ((mousePoint.x - viewBox.x) * scale);
+      viewBox.y = mousePoint.y - ((mousePoint.y - viewBox.y) * scale);
+      viewBox.width = newWidth;
+      viewBox.height = newHeight;
+
+      setViewBox();
+    }, { passive: false });
+
+    svg.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      isPanning = true;
+      svg.style.cursor = 'grabbing';
+      panStartPoint = clientToSvgPoint(event.clientX, event.clientY);
+      panStartViewBox = { ...viewBox };
+    });
+
+    svg.addEventListener('mousemove', (event) => {
+      if (!isPanning || !panStartPoint || !panStartViewBox) return;
+
+      const currentPoint = clientToSvgPoint(event.clientX, event.clientY);
+      const dx = currentPoint.x - panStartPoint.x;
+      const dy = currentPoint.y - panStartPoint.y;
+
+      viewBox.x = panStartViewBox.x - dx;
+      viewBox.y = panStartViewBox.y - dy;
+      setViewBox();
+    });
+
+    function endPan() {
+      isPanning = false;
+      panStartPoint = null;
+      panStartViewBox = null;
+      svg.style.cursor = 'default';
+    }
+
+    svg.addEventListener('mouseup', endPan);
+    svg.addEventListener('mouseleave', endPan);
+
+    svg.addEventListener('dblclick', () => {
+      viewBox.x = defaultViewBox.x;
+      viewBox.y = defaultViewBox.y;
+      viewBox.width = defaultViewBox.width;
+      viewBox.height = defaultViewBox.height;
+      setViewBox();
+    });
+
+    graphContainer.replaceChildren(svg);
+  </script>
 
 </body>
 </html>

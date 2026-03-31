@@ -4,6 +4,7 @@ import sys
 from forms import RegistrationForm,LoginForm,GpsForm
 from flask import flash,redirect,url_for
 from flask_sqlalchemy import SQLAlchemy
+from road_graph import build_road_network_graph, normalize_path, build_route_edge_details
 
 try:
     from pyswip import Prolog
@@ -43,6 +44,37 @@ app.config['SQLALCHEMY_DATABASE_URI']='sqlite:///site.db'
 
 db=SQLAlchemy(app)
 
+
+def refresh_prolog_data():
+    prolog.consult(PROLOG_FILE)
+
+
+def has_coords(place_name):
+    return len(list(prolog.query(f"coords('{place_name}', _, _)"))) > 0
+
+
+def should_use_astar(start, end):
+    if not start or not end or start == end:
+        return False
+    return has_coords(start) and has_coords(end)
+
+
+def get_all_places():
+    """Query Prolog for all places and return as (value, label) tuples."""
+    places = []
+    for result in prolog.query("place(X)"):
+        place_name = str(result['X']).strip("'")
+        places.append((place_name, place_name))
+    return sorted(places)
+
+
+def populate_form_choices(form):
+    """Populate GpsForm start and end choices from Prolog places."""
+    places = get_all_places()
+    form.start.choices = places
+    form.end.choices = places
+    return form
+
 class User(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     username=db.Column(db.String(20),unique=True,nullable=False)
@@ -55,8 +87,20 @@ class User(db.Model):
 
 @app.route('/',methods=['GET', 'POST'])
 def home():
+    refresh_prolog_data()
     form = GpsForm()
-    return flask.render_template('index.html', form=form, paths=None)
+    populate_form_choices(form)
+    graph_nodes, graph_edges = build_road_network_graph(prolog)
+    return flask.render_template(
+        'index.html',
+        form=form,
+        paths=None,
+        graph_nodes=graph_nodes,
+        graph_edges=graph_edges,
+        selected_path=[],
+        selected_route_edges=[],
+        algorithm_used=None
+    )
     
 
 
@@ -100,22 +144,45 @@ def login():
 
 @app.route('/mainapp', methods=['GET', 'POST'])
 def mainapp():
+    refresh_prolog_data()
     form = GpsForm()
+    populate_form_choices(form)
 
     paths = None
     Distance = None
     Duration = None
     result = None
+    algorithm_used = None
+    selected_path = []
+    selected_route_edges = []
+    graph_nodes, graph_edges = build_road_network_graph(prolog)
 
     if flask.request.method == 'POST':
+        start = form.start.data
+        end = form.end.data
+        roadtype = form.roadtype.data
+        avoid = form.avoid.data
+
+        use_astar = should_use_astar(start, end)
+        algorithm_name = 'astar' if use_astar else 'dijkstra'
+
         result_data = list(prolog.query(
-            f"dijkstra('{form.start.data}', '{form.end.data}', Path, Distance, Duration, '{form.roadtype.data}', '{form.avoid.data}')"
+            f"{algorithm_name}('{start}', '{end}', Path, Distance, Duration, '{roadtype}', '{avoid}')"
         ))
+
+        if len(result_data) == 0 and use_astar:
+            algorithm_name = 'dijkstra'
+            result_data = list(prolog.query(
+                f"dijkstra('{start}', '{end}', Path, Distance, Duration, '{roadtype}', '{avoid}')"
+            ))
 
         if len(result_data) > 0:
             paths = result_data[0]['Path']
             Distance = result_data[0]['Distance']
             Duration = result_data[0]['Duration']
+            selected_path = normalize_path(paths)
+            selected_route_edges = build_route_edge_details(selected_path, graph_edges)
+            algorithm_used = 'A*' if algorithm_name == 'astar' else 'Dijkstra'
         else:
             result = 'Could not find a route try again'
 
@@ -126,7 +193,12 @@ def mainapp():
         paths=paths,
         Distance=Distance,
         Duration=Duration,
-        result=result
+        result=result,
+        graph_nodes=graph_nodes,
+        graph_edges=graph_edges,
+        selected_path=selected_path,
+        selected_route_edges=selected_route_edges,
+        algorithm_used=algorithm_used
     )
 
   
@@ -140,7 +212,9 @@ def clear_list():
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
+    refresh_prolog_data()
     form = GpsForm()
+    populate_form_choices(form)
     if flask.request.method == 'POST':
         start = form.start.data
         end = form.end.data
@@ -157,16 +231,29 @@ def admin():
  
         for line in lines:
             stripped = line.strip()
- 
-            if stripped.startswith(f"road('{start}','{end}',"):
+
+            if stripped.startswith("road("):
                 inner = stripped[len("road("):-2]
                 parts = [p.strip().strip("'") for p in inner.split(',')]
-                # parts = [start, end, dist, type, condition, dur, status]
+                # parts = [start, end, dist, type, condition, depth, dur, status, direction]
+
+                forward_match = parts[0] == start and parts[1] == end
+                reverse_two_way_match = parts[0] == end and parts[1] == start and parts[8] == 'two_way'
+                if not (forward_match or reverse_two_way_match):
+                    updated_lines.append(line)
+                    continue
  
                 if action == 'condition':
                     old_value = parts[4]
                     new_value = form.avoid.data
                     parts[4] = new_value
+
+                elif action == 'pothole_depth':
+                    old_value = parts[5]
+                    new_value = str(form.pothole_depth.data if form.pothole_depth.data is not None else 0)
+                    parts[5] = new_value
+                    if int(new_value) > 3:
+                        parts[4] = 'deep potholes'
  
                 elif action == 'roadtype':
                     old_value = parts[3]
@@ -174,21 +261,32 @@ def admin():
                     parts[3] = new_value
  
                 elif action == 'status':
-                    old_value = parts[6]
+                    old_value = parts[7]
                     new_value = form.status.data
-                    parts[6] = new_value
+                    parts[7] = new_value
+
+                elif action == 'direction':
+                    old_value = parts[8]
+                    new_value = form.direction.data
+                    parts[8] = new_value
  
-                # status has no quotes in the .pl file (it's an atom like open/closed)
-                line = f"road('{parts[0]}','{parts[1]}',{parts[2]},'{parts[3]}','{parts[4]}',{parts[5]},{parts[6]}).\n"
+                # status/direction are atoms in .pl file
+                line = f"road('{parts[0]}','{parts[1]}',{parts[2]},'{parts[3]}','{parts[4]}',{parts[5]},{parts[6]},{parts[7]},{parts[8]}).\n"
                 changed = True
- 
+
             updated_lines.append(line)
  
         if changed:
             with open(pl_path, 'w') as f:
                 f.writelines(updated_lines)
             prolog.consult(pl_path)
-            label = {'condition': 'condition', 'roadtype': 'road type', 'status': 'status'}[action]
+            label = {
+                'condition': 'condition',
+                'roadtype': 'road type',
+                'status': 'status',
+                'direction': 'direction',
+                'pothole_depth': 'pothole depth'
+            }[action]
             flash(f"Updated {label} for {start} to {end}: '{old_value}' changed to '{new_value}'")
         else:
             flash(f"Could not find road: {start} to {end}")
